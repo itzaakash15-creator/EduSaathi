@@ -6,7 +6,7 @@ import type {
   Opportunity,
   UserProfile,
 } from "./types";
-import { OPPORTUNITIES, DEMO_USER } from "./mock-data";
+import { DEMO_USER } from "./mock-data";
 import { REAL_SCHEMES } from "./schemes-data";
 import { enrichOpportunity, enrichOpportunities } from "./eligibility";
 
@@ -109,10 +109,11 @@ export function getOpportunity(
   id: string,
   profile?: UserProfile | null
 ): Opportunity | undefined {
-  const raw = REAL_SCHEMES.find((o) => o.id === id) || OPPORTUNITIES.find((o) => o.id === id);
+  const raw = REAL_SCHEMES.find((o) => o.id === id);
   if (!raw) return undefined;
   return enrichOpportunity(raw, profile || DEMO_USER);
 }
+
 
 export function getRecommended(profile?: UserProfile | null): Opportunity[] {
   return enrichOpportunities(REAL_SCHEMES, profile || DEMO_USER);

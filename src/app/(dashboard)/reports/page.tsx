@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Download, FileBarChart } from "lucide-react";
 import { jsPDF } from "jspdf";
@@ -10,10 +11,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/auth-context";
 import { getRecommended } from "@/lib/api";
-import { APPLICATIONS } from "@/lib/mock-data";
+import { getUserApplications } from "@/lib/db";
+import type { Application } from "@/lib/types";
+
 
 export default function ReportsPage() {
-  const { profile } = useAuth();
+  const { profile, user, isDemo } = useAuth();
+  const [userApplications, setUserApplications] = useState<Application[]>([]);
+
+  useEffect(() => {
+    const uid = user?.uid || (isDemo ? "demo-user-001" : "");
+    if (!uid) return;
+    getUserApplications(uid, isDemo).then(setUserApplications).catch(() => {});
+  }, [user, isDemo]);
+
   const recommendations = getRecommended(profile);
   const eligible = recommendations.filter(
     (o) =>
@@ -83,17 +94,23 @@ export default function ReportsPage() {
       y = margin;
     }
     doc.setFontSize(12);
-    doc.text(`Applications Tracked (${APPLICATIONS.length})`, margin, y);
+    doc.text(`Applications Tracked (${userApplications.length})`, margin, y);
     y += 8;
     doc.setFontSize(9);
-    APPLICATIONS.forEach((app) => {
-      if (y > 270) {
-        doc.addPage();
-        y = margin;
-      }
-      doc.text(`${app.opportunityTitle} — ${app.status}`, margin, y);
+    if (userApplications.length === 0) {
+      doc.text("No active applications currently tracked.", margin, y);
       y += 6;
-    });
+    } else {
+      userApplications.forEach((app) => {
+        if (y > 270) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(`${app.opportunityTitle} — ${app.status}`, margin, y);
+        y += 6;
+      });
+    }
+
 
     doc.save(`edusaathi-report-${format(new Date(), "yyyy-MM-dd")}.pdf`);
   };
@@ -176,22 +193,29 @@ export default function ReportsPage() {
 
             <div>
               <h3 className="mb-3 text-sm font-semibold">
-                Applications ({APPLICATIONS.length})
+                Applications ({userApplications.length})
               </h3>
-              <div className="space-y-2">
-                {APPLICATIONS.map((app) => (
-                  <div
-                    key={app.id}
-                    className="flex items-center justify-between rounded-lg border border-border/60 px-4 py-2.5 text-sm"
-                  >
-                    <span className="truncate font-medium">
-                      {app.opportunityTitle}
-                    </span>
-                    <span className="text-muted-foreground">{app.status}</span>
-                  </div>
-                ))}
-              </div>
+              {userApplications.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  No active applications being tracked yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {userApplications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="flex items-center justify-between rounded-lg border border-border/60 px-4 py-2.5 text-sm"
+                    >
+                      <span className="truncate font-medium">
+                        {app.opportunityTitle}
+                      </span>
+                      <span className="text-muted-foreground">{app.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
           </CardContent>
         </Card>
       </FadeIn>

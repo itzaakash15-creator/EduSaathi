@@ -9,7 +9,6 @@ import { PageHeader, FadeIn } from "@/components/shared/ui-helpers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NOTIFICATIONS } from "@/lib/mock-data";
 import {
   getUserNotifications,
   markNotificationAsRead as syncReadToFirestore,
@@ -28,9 +27,9 @@ const TYPE_LABELS: Record<NotificationItem["type"], string> = {
 
 export default function NotificationsPage() {
   const { user, isDemo } = useAuth();
-  const [notifications, setNotifications] =
-    useState<NotificationItem[]>(NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [filter, setFilter] = useState("all");
+
 
   useEffect(() => {
     const uid = user?.uid || (isDemo ? "demo-user-001" : "");

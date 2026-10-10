@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { APPLICATIONS } from "@/lib/mock-data";
 import { getUserApplications, updateApplicationStatus as syncStatusToFirestore } from "@/lib/db";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -39,7 +38,7 @@ const STATUS_STYLES: Record<ApplicationStatus, string> = {
 
 export default function TrackerPage() {
   const { user, isDemo } = useAuth();
-  const [applications, setApplications] = useState<Application[]>(APPLICATIONS);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [filter, setFilter] = useState("All");
 
   useEffect(() => {
@@ -47,6 +46,7 @@ export default function TrackerPage() {
     if (!uid) return;
     getUserApplications(uid, isDemo).then(setApplications).catch(() => {});
   }, [user, isDemo]);
+
 
   const filtered =
     filter === "All"

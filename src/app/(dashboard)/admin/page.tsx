@@ -50,13 +50,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ADMIN_STATS, OPPORTUNITIES } from "@/lib/mock-data";
+import { ADMIN_STATS } from "@/lib/mock-data";
+import { REAL_SCHEMES } from "@/lib/schemes-data";
 import {
   getOpportunitiesFromFirestore,
   addOpportunityToFirestore,
   seedAllSchemesToFirestore,
 } from "@/lib/db";
 import type { Opportunity, OpportunityCategory } from "@/lib/types";
+
 
 const AI_USAGE_DATA = [
   { day: "Mon", queries: 2100 },
@@ -87,7 +89,8 @@ const CATEGORIES: OpportunityCategory[] = [
 ];
 
 export default function AdminPage() {
-  const [opportunities, setOpportunities] = useState<Opportunity[]>(OPPORTUNITIES);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>(REAL_SCHEMES);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newOrg, setNewOrg] = useState("");

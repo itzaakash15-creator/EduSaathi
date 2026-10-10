@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "./firebase";
 import { REAL_SCHEMES } from "./schemes-data";
-import { APPLICATIONS, NOTIFICATIONS, DEMO_USER } from "./mock-data";
+import { DEMO_USER } from "./mock-data";
 import type {
   Opportunity,
   Application,
@@ -88,26 +88,25 @@ export async function getUserApplications(
   isDemo = false
 ): Promise<Application[]> {
   if (isDemo || !isFirebaseConfigured || !db) {
-    if (typeof window === "undefined") return APPLICATIONS;
+    if (typeof window === "undefined") return [];
     const raw = localStorage.getItem(`${APPS_KEY}:${uid}`);
-    return raw ? (JSON.parse(raw) as Application[]) : APPLICATIONS;
+    return raw ? (JSON.parse(raw) as Application[]) : [];
   }
 
   try {
     const appsRef = collection(db, "users", uid, "applications");
     const snapshot = await getDocs(appsRef);
     if (snapshot.empty) {
-      // Seed default applications if collection is brand new
-      await seedDefaultApplications(uid);
-      return APPLICATIONS;
+      return [];
     }
     return snapshot.docs.map((d) => d.data() as Application);
   } catch (err) {
     console.warn("Could not fetch applications from Firestore:", err);
     const raw = localStorage.getItem(`${APPS_KEY}:${uid}`);
-    return raw ? (JSON.parse(raw) as Application[]) : APPLICATIONS;
+    return raw ? (JSON.parse(raw) as Application[]) : [];
   }
 }
+
 
 export async function saveUserApplication(
   uid: string,
@@ -175,25 +174,25 @@ export async function getUserNotifications(
   isDemo = false
 ): Promise<NotificationItem[]> {
   if (isDemo || !isFirebaseConfigured || !db) {
-    if (typeof window === "undefined") return NOTIFICATIONS;
+    if (typeof window === "undefined") return [];
     const raw = localStorage.getItem(`${NOTIFS_KEY}:${uid}`);
-    return raw ? (JSON.parse(raw) as NotificationItem[]) : NOTIFICATIONS;
+    return raw ? (JSON.parse(raw) as NotificationItem[]) : [];
   }
 
   try {
     const notifsRef = collection(db, "users", uid, "notifications");
     const snapshot = await getDocs(notifsRef);
     if (snapshot.empty) {
-      await seedDefaultNotifications(uid);
-      return NOTIFICATIONS;
+      return [];
     }
     return snapshot.docs.map((d) => d.data() as NotificationItem);
   } catch (err) {
     console.warn("Could not fetch notifications from Firestore:", err);
     const raw = localStorage.getItem(`${NOTIFS_KEY}:${uid}`);
-    return raw ? (JSON.parse(raw) as NotificationItem[]) : NOTIFICATIONS;
+    return raw ? (JSON.parse(raw) as NotificationItem[]) : [];
   }
 }
+
 
 export async function markNotificationAsRead(
   uid: string,
@@ -351,29 +350,6 @@ export async function clearUserChatMessages(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. Automated Seeder Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function seedDefaultApplications(uid: string): Promise<void> {
-  if (!db) return;
-  const batch = writeBatch(db);
-  APPLICATIONS.forEach((app) => {
-    const ref = doc(db!, "users", uid, "applications", app.id);
-    batch.set(ref, app);
-  });
-  await batch.commit();
-}
-
-async function seedDefaultNotifications(uid: string): Promise<void> {
-  if (!db) return;
-  const batch = writeBatch(db);
-  NOTIFICATIONS.forEach((notif) => {
-    const ref = doc(db!, "users", uid, "notifications", notif.id);
-    batch.set(ref, notif);
-  });
-  await batch.commit();
-}
 
 /**
  * Uploads all verified Indian Government schemes from schemes-data.ts into Firestore.

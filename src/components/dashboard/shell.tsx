@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
 import {
   LayoutDashboard,
   Search,
@@ -30,7 +31,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/auth-context";
-import { NOTIFICATIONS } from "@/lib/mock-data";
+import { getUserNotifications } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -53,15 +54,24 @@ const NAV = [
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { user, isDemo } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const uid = user?.uid || (isDemo ? "demo-user-001" : "");
+    if (!uid) return;
+    getUserNotifications(uid, isDemo).then((list) => {
+      setUnreadCount(list.filter((n) => !n.read).length);
+    }).catch(() => {});
+  }, [user, isDemo]);
+
   return (
     <nav className="flex flex-col gap-1 px-3 py-2">
       {NAV.map((item) => {
         const active = pathname === item.href || pathname.startsWith(item.href + "/");
         const Icon = item.icon;
-        const unread =
-          item.href === "/notifications"
-            ? NOTIFICATIONS.filter((n) => !n.read).length
-            : 0;
+        const unread = item.href === "/notifications" ? unreadCount : 0;
+
         return (
           <Link
             key={item.href}
@@ -98,10 +108,20 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { profile, logout, isDemo } = useAuth();
+  const { profile, user, logout, isDemo } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [hasUnread, setHasUnread] = useState(false);
+
+  useEffect(() => {
+    const uid = user?.uid || (isDemo ? "demo-user-001" : "");
+    if (!uid) return;
+    getUserNotifications(uid, isDemo).then((list) => {
+      setHasUnread(list.some((n) => !n.read));
+    }).catch(() => {});
+  }, [user, isDemo]);
+
 
   const initials =
     profile?.name
@@ -195,9 +215,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             )}
           >
             <Bell className="h-5 w-5" />
-            {NOTIFICATIONS.some((n) => !n.read) && (
+            {hasUnread && (
               <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
             )}
+
           </Link>
 
           <Link

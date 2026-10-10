@@ -8,11 +8,14 @@ import {
   XCircle,
   Loader2,
   User,
+  Sparkles,
+  Bot,
 } from "lucide-react";
 import { PageHeader, FadeIn } from "@/components/shared/ui-helpers";
 import { EligibilityBadge } from "@/components/dashboard/opportunity-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -21,8 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/auth-context";
-import { getOpportunity } from "@/lib/api";
-import { OPPORTUNITIES } from "@/lib/mock-data";
+import { getOpportunity, chatWithAssistant } from "@/lib/api";
+import { REAL_SCHEMES } from "@/lib/schemes-data";
 import { cn } from "@/lib/utils";
 import type { EligibilityStatus } from "@/lib/types";
 
@@ -68,15 +71,39 @@ function EligibilityContent() {
   const searchParams = useSearchParams();
   const { profile } = useAuth();
   const [selectedId, setSelectedId] = useState(
-    searchParams.get("opportunity") || OPPORTUNITIES[0].id
+    searchParams.get("opportunity") || REAL_SCHEMES[0].id
   );
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     const opp = searchParams.get("opportunity");
     if (opp) setSelectedId(opp);
   }, [searchParams]);
 
+  // Reset analysis on scheme change
+  useEffect(() => {
+    setAiAnalysis(null);
+  }, [selectedId]);
+
   const opportunity = getOpportunity(selectedId, profile);
+
+  const handleAiAssessment = async () => {
+    if (!opportunity || aiLoading) return;
+    setAiLoading(true);
+    try {
+      const prompt = `Perform an in-depth eligibility assessment for student ${profile?.name || "Aakash K"} (${profile?.education || "B.Tech CS"}, ${profile?.state || "Tamil Nadu"}, income ${profile?.income || "<8 LPA"}) applying for "${opportunity.title}" (${opportunity.organization}). Break down:
+1. Exact Eligibility Verdict & Match Justification
+2. Mandatory Documents Checklist
+3. Critical Mistakes to Avoid on the official portal (${opportunity.officialUrl || "portal"}).`;
+      const reply = await chatWithAssistant([{ role: "user", content: prompt }], profile);
+      setAiAnalysis(reply);
+    } catch {
+      setAiAnalysis("⚠️ Unable to connect to Gemini AI. Please ensure backend is running.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   if (!opportunity) return null;
 
@@ -86,6 +113,20 @@ function EligibilityContent() {
         <PageHeader
           title="Eligibility Checker"
           description="See how your profile matches official scheme criteria. Results are advisory — always confirm on the official portal."
+          action={
+            <Button
+              onClick={handleAiAssessment}
+              disabled={aiLoading}
+              className="gap-2 rounded-2xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-violet-500 text-white shadow-md shadow-indigo-500/25 hover:from-indigo-700 hover:to-violet-600"
+            >
+              {aiLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {aiLoading ? "Gemini Assessing…" : "AI Deep Assessment"}
+            </Button>
+          }
         />
       </FadeIn>
 
@@ -97,7 +138,7 @@ function EligibilityContent() {
               <SelectValue placeholder="Choose an opportunity" />
             </SelectTrigger>
             <SelectContent>
-              {OPPORTUNITIES.map((o) => (
+              {REAL_SCHEMES.map((o) => (
                 <SelectItem key={o.id} value={o.id}>
                   {o.title}
                 </SelectItem>
@@ -106,6 +147,20 @@ function EligibilityContent() {
           </Select>
         </div>
       </FadeIn>
+
+      {aiAnalysis && (
+        <FadeIn delay={0.08}>
+          <Card className="rounded-3xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/60 via-white to-blue-50/40 p-6 backdrop-blur-xl shadow-md shadow-indigo-500/5">
+            <div className="flex items-center gap-2.5 text-indigo-700 font-bold mb-3">
+              <Bot className="h-5 w-5" />
+              <span>EduSaathi Gemini AI Live Assessment</span>
+            </div>
+            <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed whitespace-pre-line text-sm">
+              {aiAnalysis}
+            </div>
+          </Card>
+        </FadeIn>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <FadeIn delay={0.1} className="lg:col-span-2">
@@ -136,6 +191,7 @@ function EligibilityContent() {
             </CardContent>
           </Card>
         </FadeIn>
+
 
         <FadeIn delay={0.15}>
           <Card className="rounded-2xl border-indigo-100/80 bg-white/75 backdrop-blur-xl shadow-sm shadow-indigo-500/[0.03]">

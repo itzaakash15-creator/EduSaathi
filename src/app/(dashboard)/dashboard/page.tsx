@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import {
@@ -12,6 +13,9 @@ import {
   ListChecks,
   ArrowRight,
   Bell,
+  Sparkles,
+  Bot,
+  Loader2,
 } from "lucide-react";
 import { PageHeader, FadeIn, StatCard } from "@/components/shared/ui-helpers";
 import { OpportunityCard } from "@/components/dashboard/opportunity-card";
@@ -19,12 +23,10 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
-import { getRecommended } from "@/lib/api";
-import {
-  OPPORTUNITIES,
-  APPLICATIONS,
-  NOTIFICATIONS,
-} from "@/lib/mock-data";
+import { getRecommended, chatWithAssistant } from "@/lib/api";
+import { REAL_SCHEMES } from "@/lib/schemes-data";
+import { getUserApplications, getUserBookmarks, getUserNotifications } from "@/lib/db";
+import type { Application, NotificationItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const QUICK_ACTIONS = [
@@ -55,41 +57,95 @@ const QUICK_ACTIONS = [
 ];
 
 export default function DashboardPage() {
-  const { profile } = useAuth();
+  const { profile, user, isDemo } = useAuth();
   const recommendations = getRecommended(profile).slice(0, 4);
 
-  const eligibleCount = OPPORTUNITIES.filter(
+  const [apps, setApps] = useState<Application[]>([]);
+  const [bookmarks, setBookmarks] = useState<string[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [aiBriefing, setAiBriefing] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const uid = user?.uid || (isDemo ? "demo-user-001" : "");
+
+  useEffect(() => {
+    if (!uid) return;
+    getUserApplications(uid, isDemo).then(setApps).catch(() => {});
+    getUserBookmarks(uid, isDemo).then(setBookmarks).catch(() => {});
+    getUserNotifications(uid, isDemo).then(setNotifications).catch(() => {});
+  }, [uid, isDemo]);
+
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    setAiLoading(true);
+    const prompt = `Give a concise 2-sentence morning briefing for ${profile.name} (${profile.education}, ${profile.state}, income ${profile.income}). Mention their top matching scheme categories (e.g. PM Internship, NSP Scholarships, SIH 2026) and 1 actionable next step today.`;
+    chatWithAssistant([{ role: "user", content: prompt }], profile)
+      .then((reply) => {
+        if (active) setAiBriefing(reply);
+      })
+      .catch(() => {
+        if (active) setAiBriefing("Welcome back to EduSaathi AI! Explore verified opportunities matching your academic and career goals.");
+      })
+      .finally(() => {
+        if (active) setAiLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [profile]);
+
+  const eligibleCount = getRecommended(profile).filter(
     (o) =>
       o.eligibilityStatus === "Eligible" ||
       o.eligibilityStatus === "Likely Eligible"
   ).length;
 
-  const submittedCount = APPLICATIONS.filter(
+  const submittedCount = apps.filter(
     (a) => a.status !== "Draft"
   ).length;
 
   const today = new Date();
-  const upcomingDeadlines = [...OPPORTUNITIES]
+  const upcomingDeadlines = [...REAL_SCHEMES]
     .filter((o) => differenceInDays(parseISO(o.deadline), today) >= 0)
     .sort((a, b) => a.deadline.localeCompare(b.deadline))
     .slice(0, 5);
 
-  const deadlineCount = OPPORTUNITIES.filter((o) => {
+  const deadlineCount = REAL_SCHEMES.filter((o) => {
     const days = differenceInDays(parseISO(o.deadline), today);
     return days >= 0 && days <= 30;
   }).length;
 
-  const savedCount = 3;
-  const recentNotifications = NOTIFICATIONS.slice(0, 4);
-  const firstName = profile?.name?.split(" ")[0] || "there";
+  const savedCount = bookmarks.length;
+  const recentNotifications = notifications.slice(0, 4);
+  const firstName = profile?.name?.split(" ")[0] || "Aakash";
 
   return (
     <div className="space-y-8">
       <FadeIn>
         <PageHeader
-          title={`Good evening, ${firstName}`}
-          description="Here is your personalized overview of opportunities, deadlines, and next steps."
+          title={`Good day, ${firstName}`}
+          description="Here is your personalized overview of opportunities, deadlines, and live AI guidance."
         />
+      </FadeIn>
+
+      <FadeIn delay={0.03}>
+        <Card className="rounded-3xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50/70 via-white to-blue-50/50 p-5 shadow-sm shadow-indigo-500/5 backdrop-blur-xl">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-violet-500 text-white shadow-md shadow-indigo-500/25">
+              <Bot className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">EduSaathi Gemini AI Live Briefing</span>
+                {aiLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+              </div>
+              <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                {aiBriefing || (aiLoading ? "Gemini AI is analyzing current government portals for your profile…" : "Welcome to EduSaathi AI!")}
+              </p>
+            </div>
+          </div>
+        </Card>
       </FadeIn>
 
       <FadeIn delay={0.05}>
@@ -103,7 +159,7 @@ export default function DashboardPage() {
           <StatCard
             title="Applications Submitted"
             value={submittedCount}
-            subtitle={`${APPLICATIONS.length} total tracked`}
+            subtitle={`${apps.length} total tracked`}
             icon={<FileCheck2 className="h-4 w-4" />}
           />
           <StatCard
@@ -120,6 +176,7 @@ export default function DashboardPage() {
           />
         </div>
       </FadeIn>
+
 
       <div className="grid gap-6 lg:grid-cols-3">
         <FadeIn delay={0.1} className="lg:col-span-2">
@@ -234,27 +291,34 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent className="space-y-2.5">
-              {recentNotifications.map((n) => (
-                <Link
-                  key={n.id}
-                  href={n.href || "/notifications"}
-                  className={cn(
-                    "flex gap-3 rounded-xl border px-3.5 py-2.5 transition-all hover:bg-white hover:shadow-xs",
-                    !n.read ? "border-indigo-200/80 bg-indigo-50/40" : "border-indigo-50 bg-white/60"
-                  )}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100/60 text-indigo-600">
-                    <Bell className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{n.title}</p>
-                    <p className="text-xs text-slate-500 line-clamp-2">
-                      {n.message}
-                    </p>
-                  </div>
-                </Link>
-              ))}
+              {recentNotifications.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-500">
+                  You&apos;re all caught up! No unread alerts.
+                </div>
+              ) : (
+                recentNotifications.map((n) => (
+                  <Link
+                    key={n.id}
+                    href={n.href || "/notifications"}
+                    className={cn(
+                      "flex gap-3 rounded-xl border px-3.5 py-2.5 transition-all hover:bg-white hover:shadow-xs",
+                      !n.read ? "border-indigo-200/80 bg-indigo-50/40" : "border-indigo-50 bg-white/60"
+                    )}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100/60 text-indigo-600">
+                      <Bell className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">{n.title}</p>
+                      <p className="text-xs text-slate-500 line-clamp-2">
+                        {n.message}
+                      </p>
+                    </div>
+                  </Link>
+                ))
+              )}
             </CardContent>
+
           </Card>
         </FadeIn>
       </div>
