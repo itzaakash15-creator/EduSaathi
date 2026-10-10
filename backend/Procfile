@@ -1,0 +1,2 @@
+# Expose FastAPI app for Render / Railway / Docker
+web: uvicorn main:app --host 0.0.0.0 --port $PORT

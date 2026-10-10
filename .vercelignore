@@ -1,0 +1,13 @@
+# Keep secrets and local junk out of Vercel uploads
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.venv
+.venv
+node_modules
+.next
+.git
+.cursor
+*.log
+docs/screenshots

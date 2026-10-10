@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/vault/{allPaths=**} {
+      // Allow user to download their own documents
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow user to upload files up to 15MB of PDF or image types
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*');
+        
+      // Allow user to delete their own uploaded documents
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

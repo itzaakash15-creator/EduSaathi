@@ -1,0 +1,3 @@
+# CivicBridge AI
+
+AI-powered platform that connects Indian citizens to verified government schemes, scholarships, internships, and welfare opportunities — with eligibility checks, document explanations, roadmaps, and deadline tracking.

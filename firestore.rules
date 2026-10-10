@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Admin check: either custom claim or designated admin email/role
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        request.auth.token.email.matches('.*admin.*')
+      );
+    }
+
+    // ── Citizen Profiles ───────────────────────────────────────────────────
+    match /users/{userId} {
+      // User can read and modify only their own profile document
+      allow read, write: if isOwner(userId);
+      
+      // ── Document Vault ───────────────────────────────────────────────────
+      match /vault/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ── Application Tracking ─────────────────────────────────────────────
+      match /applications/{appId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ── Notifications ────────────────────────────────────────────────────
+      match /notifications/{notifId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ── Bookmarks / Saved Opportunities ─────────────────────────────────
+      match /bookmarks/{oppId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ── AI Chat History ──────────────────────────────────────────────────
+      match /chats/{chatId} {
+        allow read, write: if isOwner(userId);
+        
+        match /messages/{messageId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+    }
+
+    // ── Government Opportunities & Schemes ────────────────────────────────
+    match /opportunities/{opportunityId} {
+      // Anyone can read verified schemes
+      allow read: if true;
+      // Authenticated users or admins can add/update schemes
+      allow create, update: if isAuthenticated();
+      // Only admins can delete schemes
+      allow delete: if isAdmin();
+    }
+
+    // ── Platform Analytics & Stats ─────────────────────────────────────────
+    match /stats/{statDoc} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}
