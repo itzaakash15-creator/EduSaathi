@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Bot, User } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Send, Loader2, Bot, User, Trash2, Sparkles } from "lucide-react";
 import { PageHeader, FadeIn } from "@/components/shared/ui-helpers";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/auth-context";
 import { chatWithAssistant, createChatMessage } from "@/lib/api";
-import { getUserChatMessages, saveChatMessage } from "@/lib/db";
+import { getUserChatMessages, saveChatMessage, clearUserChatMessages } from "@/lib/db";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const SUGGESTED_PROMPTS = [
   "What schemes am I eligible for?",
@@ -41,25 +42,40 @@ function renderMarkdownish(text: string) {
 
 export default function ChatPage() {
   const { user, profile, isDemo } = useAuth();
-  const defaultInitialMsg = createChatMessage(
-    "assistant",
-    `Hello ${profile?.name?.split(" ")[0] || "there"}! I'm your EduSaathi AI assistant. I know your profile and can help with eligibility, documents, deadlines, and application guidance.\n\nWhat would you like to explore today?`
-  );
+  
+  const defaultInitialMsg = useMemo(() => {
+    const firstName = profile?.name ? profile.name.split(" ")[0] : "Aakash";
+    return createChatMessage(
+      "assistant",
+      `Hello ${firstName}! I'm your EduSaathi AI assistant. I'm connected directly to Gemini AI and know your profile (${profile?.education || "B.Tech Computer Science"}, ${profile?.state || "Tamil Nadu"}).\n\nAsk me about schemes, eligibility, document requirements, deadlines, or career strategies!`
+    );
+  }, [profile]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([defaultInitialMsg]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const uid = user?.uid || (isDemo ? "demo-user-001" : "");
+
   useEffect(() => {
-    const uid = user?.uid || (isDemo ? "demo-user-001" : "");
     if (!uid) return;
     getUserChatMessages(uid, isDemo).then((saved) => {
       if (saved.length > 0) {
         setMessages(saved);
+      } else {
+        setMessages([defaultInitialMsg]);
       }
     }).catch(() => {});
-  }, [user, isDemo]);
+  }, [uid, isDemo, defaultInitialMsg]);
+
+  const handleClearChat = async () => {
+    if (uid) {
+      await clearUserChatMessages(uid, isDemo);
+    }
+    setMessages([defaultInitialMsg]);
+    toast.success("Chat history cleared");
+  };
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || loading) return;
@@ -70,7 +86,6 @@ export default function ChatPage() {
     setInput("");
     setLoading(true);
 
-    const uid = user?.uid || (isDemo ? "demo-user-001" : "");
     if (uid) {
       saveChatMessage(uid, userMsg, isDemo).catch(() => {});
     }
@@ -83,6 +98,13 @@ export default function ChatPage() {
       if (uid) {
         saveChatMessage(uid, assistantMsg, isDemo).catch(() => {});
       }
+    } catch (err: unknown) {
+      const errMsgText = err instanceof Error ? err.message : "Error connecting to AI service";
+      const assistantMsg = createChatMessage(
+        "assistant",
+        `⚠️ **Connection Notice**: ${errMsgText}\n\nPlease verify that the backend API is running on port 8001.`
+      );
+      setMessages((prev) => [...prev, assistantMsg]);
     } finally {
       setLoading(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -95,8 +117,20 @@ export default function ChatPage() {
         <PageHeader
           title="AI Assistant"
           description="Ask about eligibility, documents, deadlines, and application strategy."
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearChat}
+              className="gap-2 rounded-xl text-xs border-indigo-200 text-slate-700 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear Chat
+            </Button>
+          }
         />
       </FadeIn>
+
 
       <FadeIn delay={0.05} className="mb-4 flex flex-wrap gap-2">
         {SUGGESTED_PROMPTS.map((prompt) => (

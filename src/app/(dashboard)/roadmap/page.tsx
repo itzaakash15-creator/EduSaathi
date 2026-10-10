@@ -37,13 +37,27 @@ function RoadmapContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    // Instant local roadmap from real scheme steps — no waiting on Gemini
+    let active = true;
     startTransition(() => {
-      generateRoadmap(selectedId, profile, { preferAi: false }).then((data) => {
-        setRoadmap(data);
-        setAiSource(false);
-      });
+      setAiLoading(true);
+      generateRoadmap(selectedId, profile)
+        .then((data) => {
+          if (active) {
+            setRoadmap(data);
+            setAiSource(true);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to generate AI roadmap:", err);
+          toast.error("Could not generate roadmap from AI. Please check backend connection.");
+        })
+        .finally(() => {
+          if (active) setAiLoading(false);
+        });
     });
+    return () => {
+      active = false;
+    };
   }, [selectedId, profile]);
 
   const opportunity = getOpportunity(selectedId, profile);
@@ -51,16 +65,17 @@ function RoadmapContent() {
   const refineWithAi = async () => {
     setAiLoading(true);
     try {
-      const data = await generateRoadmap(selectedId, profile, { preferAi: true });
+      const data = await generateRoadmap(selectedId, profile);
       setRoadmap(data);
       setAiSource(true);
-      toast.success("Roadmap refined with Gemini");
+      toast.success("Roadmap refreshed with Gemini AI");
     } catch {
-      toast.error("AI refine timed out — showing official portal steps");
+      toast.error("Could not refresh roadmap from AI.");
     } finally {
       setAiLoading(false);
     }
   };
+
 
   return (
     <div className="space-y-8">

@@ -296,7 +296,8 @@ export async function getUserChatMessages(
   if (isDemo || !isFirebaseConfigured || !db) {
     if (typeof window === "undefined") return [];
     const raw = localStorage.getItem(`${CHATS_KEY}:${uid}`);
-    return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+    const list = raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+    return list.filter((m) => !m.content.includes("Suraj D"));
   }
 
   try {
@@ -304,6 +305,7 @@ export async function getUserChatMessages(
     if (snap.empty) return [];
     return snap.docs
       .map((d) => d.data() as ChatMessage)
+      .filter((m) => !m.content.includes("Suraj D"))
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   } catch {
     return [];
@@ -325,6 +327,28 @@ export async function saveChatMessage(
   }
 
   await setDoc(doc(db, "users", uid, "chats", message.id), message);
+}
+
+export async function clearUserChatMessages(
+  uid: string,
+  isDemo = false
+): Promise<void> {
+  if (isDemo || !isFirebaseConfigured || !db) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`${CHATS_KEY}:${uid}`);
+      localStorage.removeItem(`civicbridge_chats:${uid}`);
+    }
+    return;
+  }
+
+  try {
+    const snap = await getDocs(collection(db, "users", uid, "chats"));
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  } catch {
+    // ignore
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

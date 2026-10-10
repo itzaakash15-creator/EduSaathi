@@ -41,24 +41,33 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const DEMO_KEY = "civicbridge_demo_session";
-const PROFILE_KEY = "civicbridge_demo_profile";
+const DEMO_KEY = "edusaathi_demo_session_v2";
+const PROFILE_KEY = "edusaathi_demo_profile_v2";
 
 function loadDemoProfile(): UserProfile {
   if (typeof window === "undefined") return DEMO_USER;
+  // Clear any legacy keys from previous runs
+  localStorage.removeItem("civicbridge_demo_session");
+  localStorage.removeItem("civicbridge_demo_profile");
+
   const raw = localStorage.getItem(PROFILE_KEY);
   if (raw) {
     try {
-      return JSON.parse(raw) as UserProfile;
+      const parsed = JSON.parse(raw) as UserProfile;
+      if (parsed && parsed.name && !parsed.name.includes("Suraj")) {
+        return parsed;
+      }
     } catch {
-      return DEMO_USER;
+      // ignore
     }
   }
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(DEMO_USER));
   return DEMO_USER;
 }
 
 function clearDemoSession() {
   localStorage.removeItem(DEMO_KEY);
+  localStorage.removeItem("civicbridge_demo_session");
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -72,16 +81,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Firebase Auth works but Firestore not ready — keep a local profile bridge
       return {
         uid: firebaseUser.uid,
-        name: firebaseUser.displayName || "Citizen",
-        email: firebaseUser.email || "",
+        name: firebaseUser.displayName || DEMO_USER.name,
+        email: firebaseUser.email || DEMO_USER.email,
         country: "India",
-        state: "",
-        occupation: "",
-        education: "",
-        income: "",
-        skills: [],
-        interests: [],
-        profileComplete: false,
+        state: DEMO_USER.state,
+        occupation: DEMO_USER.occupation,
+        education: DEMO_USER.education,
+        income: DEMO_USER.income,
+        skills: DEMO_USER.skills,
+        interests: DEMO_USER.interests,
+        profileComplete: true,
         photoURL: firebaseUser.photoURL || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -91,20 +100,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        return snap.data() as UserProfile;
+        const data = snap.data() as UserProfile;
+        if (!data.name || data.name.includes("Suraj") || data.name === "Citizen") {
+          data.name = DEMO_USER.name;
+          await setDoc(ref, { name: DEMO_USER.name }, { merge: true }).catch(() => {});
+        }
+        return data;
       }
       const newProfile: UserProfile = {
         uid: firebaseUser.uid,
-        name: firebaseUser.displayName || "Citizen",
-        email: firebaseUser.email || "",
+        name: firebaseUser.displayName || DEMO_USER.name,
+        email: firebaseUser.email || DEMO_USER.email,
         country: "India",
-        state: "",
-        occupation: "",
-        education: "",
-        income: "",
-        skills: [],
-        interests: [],
-        profileComplete: false,
+        state: DEMO_USER.state,
+        occupation: DEMO_USER.occupation,
+        education: DEMO_USER.education,
+        income: DEMO_USER.income,
+        skills: DEMO_USER.skills,
+        interests: DEMO_USER.interests,
+        profileComplete: true,
         photoURL: firebaseUser.photoURL || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -115,21 +129,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn("Firestore profile unavailable; using auth profile", err);
       return {
         uid: firebaseUser.uid,
-        name: firebaseUser.displayName || "Citizen",
-        email: firebaseUser.email || "",
+        name: firebaseUser.displayName || DEMO_USER.name,
+        email: firebaseUser.email || DEMO_USER.email,
         country: "India",
-        state: "",
-        occupation: "",
-        education: "",
-        income: "",
-        skills: [],
-        interests: [],
-        profileComplete: false,
+        state: DEMO_USER.state,
+        occupation: DEMO_USER.occupation,
+        education: DEMO_USER.education,
+        income: DEMO_USER.income,
+        skills: DEMO_USER.skills,
+        interests: DEMO_USER.interests,
+        profileComplete: true,
         photoURL: firebaseUser.photoURL || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       } satisfies UserProfile;
     }
+
   }, []);
 
   useEffect(() => {

@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Any, TypeVar
 
+from fastapi import HTTPException, status
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
@@ -15,12 +16,6 @@ from app.schemas import (
     CareerAdvice,
     ChatReply,
     DocumentExplanation,
-)
-from app.services.fallbacks import (
-    fallback_career_advice,
-    fallback_chat,
-    fallback_document_explanation,
-    fallback_roadmap,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +30,7 @@ You know major Indian government portals and schemes by name, including:
 - National Scholarship Portal / NSP (scholarships.gov.in)
 - UMANG app and DigiLocker for documents
 - PM-KISAN, PM Awas Yojana (PMAY), Ayushman Bharat (PM-JAY)
-- Skill India / PMKVY, NCS (ncs.gov.in), Internship portals
+- Skill India / PMKVY, NCS (ncs.gov.in), PM Internship Scheme (pminternship.mca.gov.in)
 - Udyam / MSME registration, Startup India
 - eShram, EPFO / ESIC portals where relevant
 - State scholarship and welfare portals when the user mentions a state
@@ -71,12 +66,21 @@ class GeminiService:
     def _generate_json(self, prompt: str) -> dict[str, Any] | None:
         client = self._ensure_client()
         if client is None:
-            return None
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Gemini API key is not configured.",
+            )
 
-        models = (
+        candidate_models = [
+            "gemini-flash-lite-latest",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.7-flash",
+            "gemini-3.1-flash-lite",
             self._settings.gemini_model_primary,
             self._settings.gemini_model_fallback,
-        )
+        ]
+        models = list(dict.fromkeys(m for m in candidate_models if m))
         last_error: Exception | None = None
 
         for model_name in models:
@@ -85,7 +89,7 @@ class GeminiService:
                     model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0.4,
+                        temperature=0.3,
                         response_mime_type="application/json",
                     ),
                 )
@@ -98,13 +102,17 @@ class GeminiService:
             except Exception as exc:
                 last_error = exc
                 logger.warning(
-                    "Gemini JSON generation failed (model=%s)",
+                    "Gemini JSON generation failed (model=%s): %s",
                     model_name,
-                    exc_info=True,
+                    exc,
                 )
 
         if last_error is not None:
-            logger.warning("All Gemini models failed; last error: %s", last_error)
+            logger.error("All Gemini models failed for JSON generation: %s", last_error)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Gemini API generation failed: {last_error}",
+            )
         return None
 
     def _parse_model(self, data: dict[str, Any] | None, model_cls: type[T]) -> T | None:
@@ -112,8 +120,8 @@ class GeminiService:
             return None
         try:
             return model_cls.model_validate(data)
-        except ValidationError:
-            logger.warning("Gemini response failed validation for %s", model_cls.__name__)
+        except ValidationError as e:
+            logger.warning("Gemini response failed validation for %s: %s", model_cls.__name__, e)
             return None
 
     def explain_document(self, text: str) -> DocumentExplanation:
@@ -136,8 +144,14 @@ When the document names a scheme or portal, mention the official portal name in 
 Document text:
 {text[:12000]}
 """
-        result = self._parse_model(self._generate_json(prompt), DocumentExplanation)
-        return result or fallback_document_explanation()
+        raw = self._generate_json(prompt)
+        result = self._parse_model(raw, DocumentExplanation)
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not parse document schema from Gemini API response.",
+            )
+        return result
 
     def generate_roadmap(
         self,
@@ -152,8 +166,8 @@ Create a practical application roadmap for opportunity_id="{opportunity_id}" and
 {profile_json}
 
 Map opportunity_id to a real Indian scheme/internship/scholarship when possible
-(e.g. NSP scholarships, PMKVY, NCS internships, PM-KISAN, PMAY). Name the official
-portal in step descriptions (MyScheme, NSP, UMANG, DigiLocker, etc.).
+(e.g. NSP scholarships, PMKVY, NCS internships, PM-KISAN, PMAY, PM Internship Scheme). Name the official
+portal in step descriptions (MyScheme, NSP, UMANG, DigiLocker, pminternship.mca.gov.in, etc.).
 
 Return ONLY valid JSON matching this exact schema (camelCase keys):
 {{
@@ -173,8 +187,14 @@ Return ONLY valid JSON matching this exact schema (camelCase keys):
 
 Include 4-6 actionable steps. totalDays should equal the sum of estimatedDays.
 """
-        result = self._parse_model(self._generate_json(prompt), ApplicationRoadmap)
-        return result or fallback_roadmap(opportunity_id, profile)
+        raw = self._generate_json(prompt)
+        result = self._parse_model(raw, ApplicationRoadmap)
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not generate roadmap schema from Gemini API response.",
+            )
+        return result
 
     def career_advice(self, profile: dict[str, Any]) -> CareerAdvice:
         profile_json = json.dumps(profile, ensure_ascii=False)
@@ -196,19 +216,32 @@ Return ONLY valid JSON matching this exact schema (camelCase keys):
   "eligibilityImpact": "string — one sentence on how this improves match scores"
 }}
 """
-        result = self._parse_model(self._generate_json(prompt), CareerAdvice)
-        return result or fallback_career_advice(profile)
+        raw = self._generate_json(prompt)
+        result = self._parse_model(raw, CareerAdvice)
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not generate career advice schema from Gemini API response.",
+            )
+        return result
 
     def chat(
         self,
         messages: list[dict[str, str]],
         profile: dict[str, Any] | None = None,
     ) -> ChatReply:
+        client = self._ensure_client()
+        if client is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Gemini API key is not configured.",
+            )
+
         profile_json = json.dumps(profile or {}, ensure_ascii=False)
         history = "\n".join(
             f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in messages[-10:]
         )
-        prompt = f"""You are EduSaathi AI, a helpful assistant for Indian government schemes, scholarships, internships, and educational opportunities.
+        prompt = f"""You are EduSaathi AI, an intelligent, empathetic, and comprehensive mentor for Indian students and citizens regarding government schemes, scholarships, internships, educational grants, and career opportunities.
 {_SCHEMES_CONTEXT}
 
 User profile:
@@ -217,15 +250,55 @@ User profile:
 Conversation:
 {history}
 
-Reply helpfully in markdown. Focus on eligibility, documents, deadlines, and next steps.
-Name real portals (MyScheme, NSP, DigiLocker, UMANG, NCS, etc.) when recommending where to apply or check status.
-
-Return ONLY valid JSON: {{ "reply": "your response here" }}
+Instructions:
+- Provide an informative, well-structured, and helpful response in markdown.
+- Do NOT give generic or hardcoded canned replies. Answer the user's specific query thoroughly.
+- When schemes, scholarships, or internships are mentioned, cite the official portal (e.g., scholarships.gov.in, pminternship.mca.gov.in, myscheme.gov.in, ncs.gov.in, swayam.gov.in).
+- Provide practical eligibility requirements, real deadlines/dates, and step-by-step guidance tailored to the user's background.
 """
-        result = self._parse_model(self._generate_json(prompt), ChatReply)
-        if result and result.reply.strip():
-            return result
-        return fallback_chat(messages, profile)
+        candidate_models = [
+            "gemini-flash-lite-latest",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.7-flash",
+            "gemini-3.1-flash-lite",
+            self._settings.gemini_model_primary,
+            self._settings.gemini_model_fallback,
+        ]
+        models = list(dict.fromkeys(m for m in candidate_models if m))
+        last_error: Exception | None = None
+
+        for model_name in models:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.6,
+                    ),
+                )
+                text = (response.text or "").strip()
+                if text:
+                    self._model_name = model_name
+                    # If model happened to return JSON, unpack "reply"
+                    if text.startswith("{") and text.endswith("}"):
+                        try:
+                            parsed = json.loads(text)
+                            if isinstance(parsed, dict) and "reply" in parsed:
+                                return ChatReply(reply=parsed["reply"])
+                        except Exception:
+                            pass
+                    return ChatReply(reply=text)
+            except Exception as exc:
+                last_error = exc
+                logger.warning("Gemini chat generation failed (model=%s): %s", model_name, exc)
+                continue
+
+        logger.error("All Gemini models failed for chat: %s", last_error)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"EduSaathi AI could not generate a response: {last_error}",
+        )
 
 
 def _strip_json_fences(text: str) -> str:
